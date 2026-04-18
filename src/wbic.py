@@ -379,9 +379,11 @@ generated quantities {
 
 # ----------------------------------------------------------------------------
 # 5. ls  —  Latent State (Akam 2015)
-# Note: fixes PL[1,1]/PR[1,1] hardcoding bug in the multi-session Stan code.
-# Parameter 'beta' keeps the original name from _STAN_LS.
-# ----------------------------------------------------------------------------
+# Akam 2015 (reduced task) — rewritten 2026-04-17, smoothed 2026-04-18.
+# Bayesian inference on (ss, r) using reward probabilities Pgood=0.8, Pbad=0.2.
+# Choice rule: posterior-weighted ε-greedy (probability-matching over latent
+# state) — p_agree = p_1 if c == best_a_S1 else (1 - p_1), then
+# p_c = p_agree*(1-eps) + (1-p_agree)*eps. Matches latent_state._STAN_LS.
 _STAN_WBIC_LS = """
 data {
   int<lower=1> T;
@@ -394,27 +396,42 @@ data {
 }
 transformed data {
   real watanabe_beta = 1.0 / log(T);
+  real PGOOD = 0.8;
+  real PBAD  = 0.2;
+  int best_a_S1;  // best action in S1 (max P(ss=1 | a))
+  int best_a_S2;
+  if (PL[1] > PR[1]) { best_a_S1 = 1; best_a_S2 = 2; }
+  else               { best_a_S1 = 2; best_a_S2 = 1; }
 }
 parameters {
-  real<lower=0, upper=1>   p_r;
-  real<lower=0, upper=0.5> beta;
+  real<lower=0, upper=1>   p_r;  // block reversal probability
+  real<lower=0, upper=0.5> eps;  // ε for ε-greedy
 }
 model {
-  p_r  ~ beta(2, 2);
-  beta ~ gamma(2, 0.4);
+  p_r ~ beta(2, 2);
+  eps ~ beta(1.2, 1.2);
   {
-    matrix[2,T] V;
-    V[1,1] = 0.5; V[2,1] = 0.5;
+    real p_1[T];
+    real lik_S1;
+    real lik_S2;
+    real post;
+    real p_c;
+    real p_agree;
+    p_1[1] = 0.5;
     for (t in 1:T) {
-      if (tt[t] == 1)
-        target += watanabe_beta * log(V[c[t],t]*(1-beta) + beta*(1-V[c[t],t]));
+      if (tt[t] == 1) {
+        if (c[t] == best_a_S1) p_agree = p_1[t];
+        else                   p_agree = 1 - p_1[t];
+        p_c = p_agree * (1 - eps) + (1 - p_agree) * eps;
+        target += watanabe_beta * log(p_c + 1e-16);
+      }
       if (t < T) {
-        if      (ss[t]==1 && r[t]==1) V[1,t+1] = PL[1]*V[1,t] / (PL[1]*V[1,t] + PL[2]*(1-V[1,t]));
-        else if (ss[t]==2 && r[t]==1) V[1,t+1] = PL[2]*V[1,t] / (PL[2]*V[1,t] + PL[1]*(1-V[1,t]));
-        else if (ss[t]==1 && r[t]==0) V[1,t+1] = PR[1]*V[1,t] / (PR[1]*V[1,t] + PR[2]*(1-V[1,t]));
-        else                          V[1,t+1] = PR[2]*V[1,t] / (PR[2]*V[1,t] + PR[1]*(1-V[1,t]));
-        V[1,t+1] = (1-p_r)*V[1,t+1] + p_r*(1-V[1,t+1]);
-        V[2,t+1] = 1 - V[1,t+1];
+        if      (ss[t]==1 && r[t]==1) { lik_S1 = PGOOD;   lik_S2 = PBAD;   }
+        else if (ss[t]==2 && r[t]==1) { lik_S1 = PBAD;    lik_S2 = PGOOD;  }
+        else if (ss[t]==1 && r[t]==0) { lik_S1 = 1-PGOOD; lik_S2 = 1-PBAD; }
+        else                          { lik_S1 = 1-PBAD;  lik_S2 = 1-PGOOD;}
+        post = lik_S1 * p_1[t] / (lik_S1 * p_1[t] + lik_S2 * (1 - p_1[t]));
+        p_1[t+1] = (1 - p_r) * post + p_r * (1 - post);
       }
     }
   }
@@ -422,19 +439,28 @@ model {
 generated quantities {
   real log_lik;
   {
-    matrix[2,T] V;
+    real p_1[T];
+    real lik_S1;
+    real lik_S2;
+    real post;
+    real p_c;
+    real p_agree;
     real ll = 0.0;
-    V[1,1] = 0.5; V[2,1] = 0.5;
+    p_1[1] = 0.5;
     for (t in 1:T) {
-      if (tt[t] == 1)
-        ll += log(V[c[t],t]*(1-beta) + beta*(1-V[c[t],t]));
+      if (tt[t] == 1) {
+        if (c[t] == best_a_S1) p_agree = p_1[t];
+        else                   p_agree = 1 - p_1[t];
+        p_c = p_agree * (1 - eps) + (1 - p_agree) * eps;
+        ll += log(p_c + 1e-16);
+      }
       if (t < T) {
-        if      (ss[t]==1 && r[t]==1) V[1,t+1] = PL[1]*V[1,t] / (PL[1]*V[1,t] + PL[2]*(1-V[1,t]));
-        else if (ss[t]==2 && r[t]==1) V[1,t+1] = PL[2]*V[1,t] / (PL[2]*V[1,t] + PL[1]*(1-V[1,t]));
-        else if (ss[t]==1 && r[t]==0) V[1,t+1] = PR[1]*V[1,t] / (PR[1]*V[1,t] + PR[2]*(1-V[1,t]));
-        else                          V[1,t+1] = PR[2]*V[1,t] / (PR[2]*V[1,t] + PR[1]*(1-V[1,t]));
-        V[1,t+1] = (1-p_r)*V[1,t+1] + p_r*(1-V[1,t+1]);
-        V[2,t+1] = 1 - V[1,t+1];
+        if      (ss[t]==1 && r[t]==1) { lik_S1 = PGOOD;   lik_S2 = PBAD;   }
+        else if (ss[t]==2 && r[t]==1) { lik_S1 = PBAD;    lik_S2 = PGOOD;  }
+        else if (ss[t]==1 && r[t]==0) { lik_S1 = 1-PGOOD; lik_S2 = 1-PBAD; }
+        else                          { lik_S1 = 1-PBAD;  lik_S2 = 1-PGOOD;}
+        post = lik_S1 * p_1[t] / (lik_S1 * p_1[t] + lik_S2 * (1 - p_1[t]));
+        p_1[t+1] = (1 - p_r) * post + p_r * (1 - post);
       }
     }
     log_lik = ll;
@@ -495,7 +521,7 @@ model {
         p_1[t+1] = p_o_1[s_int,o_int] * p_1[t] /
                    (p_o_1[s_int,o_int] * p_1[t] + p_o_0[s_int,o_int] * (1 - p_1[t]));
         p_1[t+1] = (1-p_r)*p_1[t+1] + p_r*(1-p_1[t+1]);
-        V1 = 0.4*p_1[t+1] + 0.1*(1-p_1[t+1]);
+        V1 = 0.8*p_1[t+1] + 0.2*(1-p_1[t+1]);
         V[1,t+1] = 1 - V1;
         V[2,t+1] = V1;
         Qmb[1,t+1] = i_temp*(PL[1]*V[1,t+1] + PL[2]*V[2,t+1]) + P*prev_c;
@@ -534,7 +560,7 @@ generated quantities {
         p_1[t+1] = p_o_1[s_int,o_int] * p_1[t] /
                    (p_o_1[s_int,o_int] * p_1[t] + p_o_0[s_int,o_int] * (1 - p_1[t]));
         p_1[t+1] = (1-p_r)*p_1[t+1] + p_r*(1-p_1[t+1]);
-        V1 = 0.4*p_1[t+1] + 0.1*(1-p_1[t+1]);
+        V1 = 0.8*p_1[t+1] + 0.2*(1-p_1[t+1]);
         V[1,t+1] = 1 - V1;
         V[2,t+1] = V1;
         Qmb[1,t+1] = i_temp*(PL[1]*V[1,t+1] + PL[2]*V[2,t+1]) + P*prev_c;
@@ -685,7 +711,7 @@ WBIC_MODELS = {
     'rac_p':     WBICModel(stan_code=_STAN_WBIC_RAC_P,     param_names=['alpha', 'tmp', 'P'],                                        r_is_int=True),
     'hyb_p':     WBICModel(stan_code=_STAN_WBIC_HYB_P,     param_names=['alpha', 'forget', 'lambda', 'Wmf', 'Wmb', 'P'],            r_is_int=False),
     'mb_p':      WBICModel(stan_code=_STAN_WBIC_MB_P,      param_names=['alpha', 'forget', 'Wmb', 'P'],                             r_is_int=False),
-    'ls':        WBICModel(stan_code=_STAN_WBIC_LS,        param_names=['p_r', 'beta'],                                             r_is_int=False),
+    'ls':        WBICModel(stan_code=_STAN_WBIC_LS,        param_names=['p_r', 'eps'],                                              r_is_int=False),
     'ls_asym_p': WBICModel(stan_code=_STAN_WBIC_LS_ASYM_P, param_names=['p_r', 'i_temp', 'P'],                                      r_is_int=True),
     'hyb_inf':   WBICModel(stan_code=_STAN_WBIC_HYB_INF,   param_names=['alpha', 'forget', 'lambda', 'Wmf', 'Winf', 'P', 'p_r'],   r_is_int=True),
 }
