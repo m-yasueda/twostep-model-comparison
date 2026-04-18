@@ -167,90 +167,99 @@ def _ll_ls_asym_pmulti(param, c, ss, tt, r, PR, PL, n_trial):
     return ll, n_fc
 
 
-def _ll_ls(param, c, ss, tt, r,PR, PL, n_trial):
-    eps = 1e-16
-    
-    p_r   = param['p_r']
+def _ll_ls(param, c, ss, tt, r, PR, PL, n_trial):
+    """Latent State (Akam 2015) — matches _STAN_LS.
+
+    Python V[0] ↔ Stan V[1] (up/left), Python V[1] ↔ Stan V[2] (down/right).
+    """
+    eps  = 1e-16
+    p_r  = param['p_r']
     beta = param['beta']
-    
-    c = c[:n_trial]
+
+    c  = c[:n_trial]
     ss = ss[:n_trial]
     tt = tt[:n_trial]
     r  = r[:n_trial]
-    n_freechoice = np.sum(tt == 1)    
-    V       = np.zeros((2,n_trial))
-    V[0,1] = 0.5
-    V[1,1] = 0.5
+    n_freechoice = np.sum(tt == 1)
+
+    V = np.zeros((2, n_trial))
+    V[0, 0] = 0.5
+    V[1, 0] = 0.5
 
     log_likelihood = 0.0
-    for t in range (n_trial):        
-        a_prob          = V[c[t]-1,t]*(1-beta) + beta*(1-V[c[t]-1, t])
-        if (tt[t] == 1):
-            log_likelihood += np.log(a_prob + eps) if (c[t]-1) == 0 else np.log(1. - a_prob + eps)
+    for t in range(n_trial):
+        a_prob = V[c[t]-1, t] * (1 - beta) + beta * (1 - V[c[t]-1, t])
+        if tt[t] == 1:
+            log_likelihood += (np.log(a_prob + eps) if (c[t] - 1) == 0
+                               else np.log(1.0 - a_prob + eps))
 
-        if t < n_trial-1 :
-            if (ss[t]==1 and r[t] ==1): #up, rewarded
-                V[1, t+1] = PL[0] * V[1, t] / (PL[0] *V[1, t] +  PL[1]  * (1 - V[1, t]))
-
-            elif (ss[t] == 2 and r[t] == 1): #down, rewarded
-                V[1, t+1] = PL[1]* V[1, t] / (PL[1]*V[1, t] +  PL[0] * (1 - V[1, t]))
-
-            elif (ss[t]==1 and r[t] ==0):  #up, nonrewarded
-                V[1, t+1] = PR[0]* V[1, t] / (PR[0]*V[1, t] +  PR[1] * (1 - V[1, t]))
-
+        if t < n_trial - 1:
+            # Bayesian update on V[0] (= Stan V[1])
+            if   ss[t] == 1 and r[t] == 1:
+                V[0, t+1] = PL[0] * V[0, t] / (PL[0] * V[0, t] + PL[1] * (1 - V[0, t]))
+            elif ss[t] == 2 and r[t] == 1:
+                V[0, t+1] = PL[1] * V[0, t] / (PL[1] * V[0, t] + PL[0] * (1 - V[0, t]))
+            elif ss[t] == 1 and r[t] == 0:
+                V[0, t+1] = PR[0] * V[0, t] / (PR[0] * V[0, t] + PR[1] * (1 - V[0, t]))
             else:
-                V[1, t+1] = PR[1]* V[1, t] / (PR[1]*V[1, t] +  PR[0] * (1 - V[1, t]))
+                V[0, t+1] = PR[1] * V[0, t] / (PR[1] * V[0, t] + PR[0] * (1 - V[0, t]))
 
-            #Update of state probabilities due to possibility of block reversal.
-            V[0, t+1] =(1 - p_r) * V[0, t+1] + p_r * (1 - V[0, t+1])
-            V[1, t+1] = 1 - V[0,t+1]
+            # block-reversal mixing on V[0]
+            V[0, t+1] = (1 - p_r) * V[0, t+1] + p_r * (1 - V[0, t+1])
+            V[1, t+1] = 1.0 - V[0, t+1]
 
     return log_likelihood, n_freechoice
 
-def _ll_ls_P(param, c, ss, tt, r,PR, PL, n_trial):
-    eps = 1e-16
-    
-    p_r   = param['p_r']
+
+def _ll_ls_P(param, c, ss, tt, r, PR, PL, n_trial):
+    """Latent State + perseveration — matches _STAN_LS_P.
+
+    Python V[0] ↔ Stan V[1] (up/left), Python V[1] ↔ Stan V[2] (down/right).
+    prev_c sign follows Stan: c==1 → -0.5, c==2 → +0.5.
+    Perseveration P*prev_c is added to V[1] (= Stan V[2]) only.
+    """
+    eps  = 1e-16
+    p_r  = param['p_r']
     beta = param['beta']
-    P = param['P']
-    
-    c = c[:n_trial]
+    P    = param['P']
+
+    c  = c[:n_trial]
     ss = ss[:n_trial]
     tt = tt[:n_trial]
     r  = r[:n_trial]
-    n_freechoice = np.sum(tt == 1)    
-    V       = np.zeros((2,n_trial))
-    V[0,1] = 0.5
-    V[1,1] = 0.5
+    n_freechoice = np.sum(tt == 1)
+
+    V = np.zeros((2, n_trial))
+    V[0, 0] = 0.5
+    V[1, 0] = 0.5
     prev_c = 0.5
 
     log_likelihood = 0.0
-    for t in range (n_trial):        
-        a_prob          = V[c[t]-1,t]*(1-beta) + beta*(1-V[c[t]-1, t])
-        if (tt[t] == 1):
-            log_likelihood += np.log(a_prob + eps) if (c[t]-1) == 0 else np.log(1. - a_prob + eps)
+    for t in range(n_trial):
+        a_prob = V[c[t]-1, t] * (1 - beta) + beta * (1 - V[c[t]-1, t])
+        if tt[t] == 1:
+            log_likelihood += (np.log(a_prob + eps) if (c[t] - 1) == 0
+                               else np.log(1.0 - a_prob + eps))
 
-        if t < n_trial-1 :    
-            if (c[t] == 1):
-                prev_c = 0.5
-            elif (c[t] == 2):
-                prev_c = -0.5
-                
-            if (ss[t]==1 and r[t] ==1): #up, rewarded
-                V[1, t+1] = PL[0] * V[1, t] / (PL[0] *V[1, t] +  PL[1]  * (1 - V[1, t]))
-
-            elif (ss[t] == 2 and r[t] == 1): #down, rewarded
-                V[1, t+1] = PL[1]* V[1, t] / (PL[1]*V[1, t] +  PL[0] * (1 - V[1, t]))
-
-            elif (ss[t]==1 and r[t] ==0):  #up, nonrewarded
-                V[1, t+1] = PR[0]* V[1, t] / (PR[0]*V[1, t] +  PR[1] * (1 - V[1, t]))
-
+        if t < n_trial - 1:
+            # Bayesian update on V[0] (= Stan V[1])
+            if   ss[t] == 1 and r[t] == 1:
+                V[0, t+1] = PL[0] * V[0, t] / (PL[0] * V[0, t] + PL[1] * (1 - V[0, t]))
+            elif ss[t] == 2 and r[t] == 1:
+                V[0, t+1] = PL[1] * V[0, t] / (PL[1] * V[0, t] + PL[0] * (1 - V[0, t]))
+            elif ss[t] == 1 and r[t] == 0:
+                V[0, t+1] = PR[0] * V[0, t] / (PR[0] * V[0, t] + PR[1] * (1 - V[0, t]))
             else:
-                V[1, t+1] = PR[1]* V[1, t] / (PR[1]*V[1, t] +  PR[0] * (1 - V[1, t]))
+                V[0, t+1] = PR[1] * V[0, t] / (PR[1] * V[0, t] + PR[0] * (1 - V[0, t]))
 
-            #Update of state probabilities due to possibility of block reversal.
-            V[0, t+1] =(1 - p_r) * V[0, t+1] + p_r * (1 - V[0, t+1]) +  P*prev_c
-            V[1, t+1] = 1 - V[0,t+1]
+            # block-reversal mixing on V[0]
+            V[0, t+1] = (1 - p_r) * V[0, t+1] + p_r * (1 - V[0, t+1])
+
+            # prev_c with Stan sign convention
+            prev_c = -0.5 if c[t] == 1 else 0.5
+
+            # perseveration offset applied to V[1] (= Stan V[2]) only
+            V[1, t+1] = 1.0 - V[0, t+1] + P * prev_c
 
     return log_likelihood, n_freechoice
 # ---------------------------------------------------------------------------
