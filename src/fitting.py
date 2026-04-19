@@ -141,7 +141,7 @@ def LOO(model, sm, S, T, T_max, c, ss, tt, r, PL, PR):
     r_arr = r.astype(int) if model.r_is_int else r
     inherit_v = (model.name == "mb_p_vinherit")
     if inherit_v:
-        from .models.model_based import forward_mb_p_vinherit
+        from models.model_based import forward_mb_p_vinherit
 
     nl = []
     for i in range(S):
