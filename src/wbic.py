@@ -86,7 +86,7 @@ model {
       if (tt[t] == 1)
         target += watanabe_beta * log(1.0 / (1.0 + exp(-(Qnet[c[t],t] - Qnet[3-c[t],t]))));
       if (t < T) {
-        Qmf[c[t],   t+1] = (1-alpha)*Qmf[c[t],t]   + alpha*(lambda*r[t] - (1-lambda)*V[ss[t],t]);
+        Qmf[c[t],   t+1] = (1-alpha)*Qmf[c[t],t]   + alpha*(lambda*r[t] + (1-lambda)*V[ss[t],t]);
         Qmf[3-c[t], t+1] = (1-forget)*Qmf[3-c[t],t];
         V[ss[t],    t+1] = (1-alpha)*V[ss[t],t]    + alpha*r[t];
         V[3-ss[t],  t+1] = (1-forget)*V[3-ss[t],t];

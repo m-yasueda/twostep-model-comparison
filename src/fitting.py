@@ -128,11 +128,20 @@ def LOO(model, sm, S, T, T_max, c, ss, tt, r, PL, PR):
             - MAP: compile with priors in the model block (default)
             - MLE: compile without priors in the model block
 
+    For `mb_p_vinherit`, the held-out session's initial V is obtained by
+    replaying all chronological predecessors with the fitted params, so
+    the inheritance mechanism is actually exercised at evaluation time.
+    This requires sessions to be pre-sorted by date. All other models
+    use the standard per-session evaluation path unchanged.
+
     Returns:
         nl: list of per-session normalized log-likelihoods
         param: parameters from the last fold
     """
     r_arr = r.astype(int) if model.r_is_int else r
+    inherit_v = (model.name == "mb_p_vinherit")
+    if inherit_v:
+        from .models.model_based import forward_mb_p_vinherit
 
     nl = []
     for i in range(S):
@@ -162,10 +171,25 @@ def LOO(model, sm, S, T, T_max, c, ss, tt, r, PL, PR):
 
         param = sm.optimizing(data=train, seed=123, verbose=True)
 
-        ll, n_fc = model.log_likelihood(
-            param, test["c"], test["ss"], test["tt"], test["r"],
-            test["PR"], test["PL"], test["T"]
-        )
+        if inherit_v:
+            V_init = None
+            for k in range(i):
+                _, _, V_init = forward_mb_p_vinherit(
+                    param,
+                    c[k, :].astype(int), ss[k, :].astype(int),
+                    tt[k, :].astype(int), r_arr[k, :],
+                    PR[:, k], PL[:, k], int(T[k]),
+                    V_init=V_init,
+                )
+            ll, n_fc = model.log_likelihood(
+                param, test["c"], test["ss"], test["tt"], test["r"],
+                test["PR"], test["PL"], test["T"], V_init=V_init,
+            )
+        else:
+            ll, n_fc = model.log_likelihood(
+                param, test["c"], test["ss"], test["tt"], test["r"],
+                test["PR"], test["PL"], test["T"]
+            )
         nl.append(ll / n_fc)
 
     print(np.exp(np.mean(nl)))

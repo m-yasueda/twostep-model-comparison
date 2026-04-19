@@ -231,7 +231,6 @@ parameters {
 }
 model {
   vector[2] V_last;
-  vector[2] Qnet_last;
 
   alpha ~ beta(1.2,1.2);
   forget ~ beta(1.2,1.2);
@@ -246,13 +245,13 @@ model {
 
     if (i == 1){
       V[1,1] = 0.5;  V[2,1] = 0.5;
-      Qnet[1,1] = 0.5;  Qnet[2,1] = 0.5;
-      Qmb[1,1] = 0.5;  Qmb[2,1] = 0.5;
     } else {
       V[1,1] = V_last[1];  V[2,1] = V_last[2];
-      Qnet[1,1] = Qnet_last[1];  Qnet[2,1] = Qnet_last[2];
-      Qmb[1,1] = Qnet_last[1];  Qmb[2,1] = Qnet_last[2];
     }
+    Qmb[1,1] = PL[1,i] * V[1,1] + PL[2,i] * V[2,1];
+    Qmb[2,1] = PR[1,i] * V[1,1] + PR[2,i] * V[2,1];
+    Qnet[1,1] = Wmb * Qmb[1,1];
+    Qnet[2,1] = Wmb * Qmb[2,1];
 
     for ( t in 1:T[i] ) {
       if (tt[i, t] == 1){
@@ -274,8 +273,6 @@ model {
     }
     V_last[1] = V[1, T[i]];
     V_last[2] = V[2, T[i]];
-    Qnet_last[1] = Qnet[1, T[i]];
-    Qnet_last[2] = Qnet[2, T[i]];
   }
 }
 """
@@ -489,11 +486,16 @@ def ll_mb_p_asym(param, c, ss, tt, r, PR, PL, n_trial):
     return log_lik, n_freechoice
 
 
-def ll_mb_p_vinherit(param, c, ss, tt, r, PR, PL, n_trial):
-    """Single-session log-likelihood for MB with value inheritance.
-    Note: value inheritance is handled at the Stan level across sessions.
-    For LOO cross-validation, this evaluates a single held-out session
-    with initial values at 0.5 (matching first-session behavior).
+def forward_mb_p_vinherit(param, c, ss, tt, r, PR, PL, n_trial, V_init=None):
+    """Forward pass for MB with value inheritance — mirrors STAN_MB_P_VINHERIT.
+
+    Args:
+        V_init: (V0, V1) to initialize V at t=0. If None, defaults to (0.5, 0.5),
+                matching the first-session prior used in Stan.
+
+    Returns:
+        (log_lik, n_freechoice, V_final) where V_final = (V[0, -1], V[1, -1]),
+        suitable for chaining into the next session's V_init.
     """
     eps = 1e-16
     alpha = param['alpha']
@@ -502,13 +504,18 @@ def ll_mb_p_vinherit(param, c, ss, tt, r, PR, PL, n_trial):
     P = param['P']
 
     c = c[:n_trial]; ss = ss[:n_trial]; tt = tt[:n_trial]; r = r[:n_trial]
-    n_freechoice = np.sum(tt == 1)
+    n_freechoice = int(np.sum(tt == 1))
+
+    V0, V1 = (0.5, 0.5) if V_init is None else (V_init[0], V_init[1])
+    V = np.zeros((2, n_trial))
     Qmb = np.zeros((2, n_trial))
     Qnet = np.zeros((2, n_trial))
-    V = np.zeros((2, n_trial))
-    # Initialize to 0.5 for value-inheritance variant
-    Qnet[:, 0] = 0.5; V[:, 0] = 0.5; Qmb[:, 0] = 0.5
-    prev_c = 0
+
+    V[0, 0] = V0; V[1, 0] = V1
+    Qmb[0, 0] = PL[0]*V[0, 0] + PL[1]*V[1, 0]
+    Qmb[1, 0] = PR[0]*V[0, 0] + PR[1]*V[1, 0]
+    Qnet[0, 0] = Wmb * Qmb[0, 0]
+    Qnet[1, 0] = Wmb * Qmb[1, 0]
 
     log_lik = 0.0
     for t in range(n_trial):
@@ -526,6 +533,22 @@ def ll_mb_p_vinherit(param, c, ss, tt, r, PR, PL, n_trial):
 
             Qnet[0, t+1] = Wmb*Qmb[0, t+1] + P*prev_c
             Qnet[1, t+1] = Wmb*Qmb[1, t+1]
+
+    V_final = (float(V[0, n_trial - 1]), float(V[1, n_trial - 1]))
+    return log_lik, n_freechoice, V_final
+
+
+def ll_mb_p_vinherit(param, c, ss, tt, r, PR, PL, n_trial, V_init=None):
+    """Log-likelihood for MB with value inheritance (Model-protocol wrapper).
+
+    When V_init is None, the session is evaluated standalone with V=(0.5, 0.5)
+    at t=0 — identical to the Stan first-session prior. For inheritance-aware
+    LOO, callers should replay chronological predecessors via
+    `forward_mb_p_vinherit` and pass the resulting V_final as V_init here.
+    """
+    log_lik, n_freechoice, _ = forward_mb_p_vinherit(
+        param, c, ss, tt, r, PR, PL, n_trial, V_init=V_init
+    )
     return log_lik, n_freechoice
 
 
