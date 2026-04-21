@@ -267,8 +267,11 @@ def _ll_ls_P(param, c, ss, tt, r, PR, PL, n_trial):
     """Latent State + perseveration — matches _STAN_LS_P.
 
     Python V[0] ↔ Stan V[1] (up/left), Python V[1] ↔ Stan V[2] (down/right).
-    prev_c sign follows Stan: c==1 → -0.5, c==2 → +0.5.
-    Perseveration P*prev_c is added to V[1] (= Stan V[2]) only.
+    prev_c sign follows MF/MB/Hybrid convention: c==1 → +0.5, c==2 → -0.5,
+    with P*prev_c subtracted from V[1] (= Stan V[2]). Mathematically identical
+    to the previous (prev_c=-0.5 if c==1; added to V[1]) formulation — the
+    double sign flip is purely cosmetic so the P column in summary tables is
+    comparable in sign to mf_p / mb_p / hyb_p.
     """
     eps  = 1e-16
     p_r  = param['p_r']
@@ -308,11 +311,13 @@ def _ll_ls_P(param, c, ss, tt, r, PR, PL, n_trial):
             # block-reversal mixing on V[0]
             V[0, t+1] = (1 - p_r) * V[0, t+1] + p_r * (1 - V[0, t+1])
 
-            # prev_c with Stan sign convention
-            prev_c = -0.5 if c[t] == 1 else 0.5
+            # prev_c with MF/MB/Hybrid convention
+            prev_c = 0.5 if c[t] == 1 else -0.5
 
-            # perseveration offset applied to V[1] (= Stan V[2]) only
-            V[1, t+1] = 1.0 - V[0, t+1] + P * prev_c
+            # perseveration offset subtracted from V[1] (= Stan V[2]).
+            # Equivalent to old (prev_c = -0.5 if c==1; V[1] += P*prev_c)
+            # after double sign flip; same P semantics, consistent sign.
+            V[1, t+1] = 1.0 - V[0, t+1] - P * prev_c
 
     return log_likelihood, n_freechoice
 # ---------------------------------------------------------------------------
@@ -694,13 +699,16 @@ model {
           }
          
          //Update of state probabilities due to possibility of block reversal.
+         // prev_c with MF/MB/Hybrid convention: c==1 → +0.5, c==2 → -0.5;
+         // P*prev_c subtracted from V[2]. Mathematically identical to the
+         // previous (prev_c = -0.5 if c==1; added to V[2]) formulation.
          if (c[i, t] == 1) {
-            prev_c = -0.5;
-          } else if (c[i, t] == 2) {
             prev_c = 0.5;
+          } else if (c[i, t] == 2) {
+            prev_c = -0.5;
           }
-          V[1, t+1] =(1 - p_r) * V[1, t+1] + p_r * (1 - V[1, t+1]); 
-          V[2, t+1] = 1 - V[1,t+1] +  P*prev_c;     
+          V[1, t+1] =(1 - p_r) * V[1, t+1] + p_r * (1 - V[1, t+1]);
+          V[2, t+1] = 1 - V[1,t+1] -  P*prev_c;
       }
       
     }
