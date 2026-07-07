@@ -1,0 +1,24 @@
+# Python dependencies for twostep-model-comparison
+#
+# Tested with Python 3.8.20 (conda env "stanenv").
+# Versions are pinned to those used to produce the published results.
+#
+# NOTE ON PyStan: this project uses the PyStan 2.x API (pystan==2.19.1.1),
+# which compiles Stan models at runtime and therefore requires:
+#   - Python 3.8  (PyStan 2.x does not support 3.9+)
+#   - a working C++ compiler on PATH (e.g. g++ >= 8)
+#   - Cython (build-time dependency for model compilation)
+# PyStan 3.x is a different, incompatible API and will NOT run this code.
+#
+# Recommended setup:
+#   conda create -n stanenv python=3.8
+#   conda activate stanenv
+#   pip install -r requirements.txt
+
+numpy==1.24.4
+pandas==1.5.3
+scipy==1.10.1
+matplotlib==3.7.3
+pystan==2.19.1.1
+cython==3.0.11
+nest_asyncio==1.6.0

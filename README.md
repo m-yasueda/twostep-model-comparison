@@ -36,6 +36,7 @@ twostep-model-comparison/
 ├── notebooks/                  # Analysis notebooks (see below)
 ├── data/raw/                   # Raw pyControl .txt session files
 ├── results/
+│   ├── behavior/               # Model-free behavior stats (stay prob, better-choice)
 │   ├── CV/                     # LOO cross-validation CSVs
 │   ├── WBIC/                   # Per-session and per-subject WBIC CSVs
 │   └── simulation/             # Behavioral simulation CSVs
@@ -50,6 +51,7 @@ Run in order. Each notebook is self-contained once its prerequisites exist.
 |---|----------|-------------|---------------|
 | 1 | `1_data_preprocessing.ipynb` | Parse raw pyControl `.txt` files into structured session data | Raw data in `data/raw/` |
 | 1b | `1b_trial_counts.ipynb` | Summary of trial counts by stage and subject | Notebook 1 |
+| 1c | `1c_behavior_analysis.ipynb` | Model-free behavior analysis: stay probabilities and better-choice rate across stages | Notebook 1 |
 | 2 | `2_loo_cross_validation.ipynb` | Leave-one-out cross-validation for a single model and stage | Notebook 1 |
 | 3 | `3_cv_model_comparison.ipynb` | Load CV results across models; comparison plots | Notebook 2 (all models) |
 | 4 | `4_wbic_fitting.ipynb` | Fit WBIC per session using tempered posterior sampling | Notebook 1 |
@@ -71,9 +73,12 @@ Notebook 1  ──►  Notebook 2 (repeat per model)  ──►  Notebook 3
 
 | Stage | Folder | Reward probabilities | Description |
 |-------|--------|---------------------|-------------|
-| 4.2--4.6 | `WT*_Training/` | 0.9 / 0.1 | Progressive training |
-| 4.7 | `WT*_Training/` | 0.8 / 0.2 | Late training |
-| 4.8 | `WT*/` (main) | 0.8 / 0.2 | Final experiment sessions |
+| 4.2--4.5 | `WT*_Training/` | 0.9 / 0.1 | Progressive training |
+| 4.6 | `WT*_Training/` | 0.9 / 0.1 | Early training (75% free-choice) |
+| 4.7 | `WT*_Training/` | 0.8 / 0.2 | Intermediate training |
+| 4.8 | `WT*/` (main) | 0.8 / 0.2 | Late training / final experiment sessions |
+
+The three analysis stages `4.6`, `4.7`, and `4.8` are referred to as **early**, **intermediate**, and **late** training, respectively, in the figures and manuscript.
 
 Note: stage `4.8` is an analysis label. Sessions in the main folder have `training_stage == '4.7'` in the raw files but are treated as the final experiment phase.
 
@@ -104,6 +109,9 @@ for session in exp.sessions:
 
 | File pattern | Contents |
 |---|---|
+| `results/behavior/stay_prob_per_session.csv` / `_per_subject.csv` | Stay probabilities (4 conditions) per session / subject |
+| `results/behavior/better_choice_per_session.csv` / `_per_subject.csv` | Better-choice rate per session / subject |
+| `results/behavior/better_choice_pairwise_rmANOVA.csv` | Pairwise post-hoc results for better-choice rate across stages |
 | `results/CV/CV_{model}_{stage}.csv` | LOO cross-validation log-likelihood per session |
 | `results/WBIC/WBIC_{model}_{stage}.csv` | Per-session WBIC + MAP parameters |
 | `results/WBIC/WBIC_norm_subj_{model}_{stage}.csv` | Per-subject mean WBIC normalized by trial count |
