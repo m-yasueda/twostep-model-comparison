@@ -99,11 +99,44 @@ for session in exp.sessions:
     print(session.datetime_string, len(session.print_lines), 'trials')
 ```
 
+## Data Availability
+
+The raw pyControl `.txt` session files are not included in this repository. The behavioral data supporting the
+findings of this study are available from the corresponding author upon reasonable request.
+
+To run the pipeline, place the raw data under `data/raw/` following the layout expected by `config.py`:
+
+```
+data/raw/
+├── WT1/ … WT6/                 # final experiment sessions (analysis stage 4.8)
+└── WT1_Training/ … WT6_Training/   # training sessions (stages 4.2–4.7)
+```
+
+Each subject folder contains the per-session pyControl `.txt` files. Once the
+data are in place, run the notebooks in order starting from
+`1_data_preprocessing.ipynb`.
+
 ## Dependencies
 
-- Python 3.8+
+See `requirements.txt` for exact pinned versions. In brief:
+
+- Python 3.8 (required — PyStan 2.x does not support 3.9+)
 - NumPy, Pandas, SciPy, Matplotlib
-- PyStan 2.x (Bayesian model fitting)
+- PyStan **2.x** (`pystan==2.19.1.1`; the incompatible 3.x API will not run this code)
+- Cython and a C++ compiler (`g++`), needed by PyStan to compile Stan models
+
+Recommended setup:
+
+```bash
+conda create -n stanenv python=3.8
+conda activate stanenv
+pip install -r requirements.txt
+```
+
+Contributors: notebook outputs are stripped on commit via
+[`nbstripout`](https://github.com/kynan/nbstripout). After cloning, run
+`pip install nbstripout && nbstripout --install` once to enable the filter
+locally (the repository already ships the matching `.gitattributes`).
 
 ## Output Conventions
 
@@ -116,3 +149,8 @@ for session in exp.sessions:
 | `results/WBIC/WBIC_{model}_{stage}.csv` | Per-session WBIC + MAP parameters |
 | `results/WBIC/WBIC_norm_subj_{model}_{stage}.csv` | Per-subject mean WBIC normalized by trial count |
 | `results/simulation/sim_{model}_{stage}.csv` | Simulated stay probability and trials-to-criterion per session |
+
+## Citation
+
+If you use this code, please cite:
+_Citation details will be added upon publication._
